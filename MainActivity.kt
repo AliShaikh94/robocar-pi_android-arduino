@@ -10,9 +10,9 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
-import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import com.example.alishaikh.rc_test.HardwareDrivers.DS4Connection
 import com.example.alishaikh.rc_test.HardwareDrivers.RcCarController
 
 
@@ -21,7 +21,7 @@ import com.felhr.usbserial.UsbSerialInterface
 
 import java.io.UnsupportedEncodingException
 
-class MainActivity : Activity(){
+class MainActivity : Activity() {
 
 
     private var usbManager: UsbManager? = null
@@ -29,7 +29,42 @@ class MainActivity : Activity(){
     private var serialDevice: UsbSerialDevice? = null
     private var buffer = ""
 
+    lateinit var DS4Manager: DS4Connection
+
+
     var carController: RcCarController = RcCarController()
+
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        usbManager = getSystemService(UsbManager::class.java)
+
+
+        // Detach events are sent as a system-wide broadcast
+        val filter = IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        registerReceiver(usbDetachedReceiver, filter)
+
+//        DS4Manager = DS4Connection(this)
+//        setupBluetooth()
+
+    }
+
+
+    private fun setupBluetooth() {
+        DS4Manager = DS4Connection(this@MainActivity)
+
+        Log.d(TAG, "BT status:  ${DS4Manager.isEnabled()}")
+        Log.d(TAG, "Paired devices: ${DS4Manager.getPairedDevices().size}")
+        val ds4device = DS4Manager.isPaired()
+        if (ds4device == null) { Log.d(TAG, "Starting discovery: ${DS4Manager.startDiscovery()}") }
+        else {
+            Log.d(TAG, "Creating bond: ${DS4Manager.connect(ds4device)}")
+        }
+//        Log.d(TAG, "Starting discovery: ${DS4Manager.startDiscovery()}")
+//        Log.d(TAG, "Paired devices: ${DS4Manager.getPairedDevices().size}")
+    }
+
+
 
 
     private val callback = UsbSerialInterface.UsbReadCallback { data ->
@@ -37,12 +72,12 @@ class MainActivity : Activity(){
             val dataUtf8 = String(data) // Need to check for UTF-8
             buffer += dataUtf8
             var index: Int
-            index =  buffer.indexOf('\n')
+            index = buffer.indexOf('\n')
             while (index != -1) {
                 val dataStr = buffer.substring(0, index + 1).trim { it <= ' ' }
                 buffer = if (buffer.length == index) "" else buffer.substring(index + 1)
                 runOnUiThread { onSerialDataReceived(dataStr) }
-                index =  buffer.indexOf('\n')
+                index = buffer.indexOf('\n')
             }
         } catch (e: UnsupportedEncodingException) {
             Log.e(TAG, "Error receiving USB data", e)
@@ -63,17 +98,6 @@ class MainActivity : Activity(){
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        usbManager = getSystemService(UsbManager::class.java)
-
-        // Detach events are sent as a system-wide broadcast
-        val filter = IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED)
-        registerReceiver(usbDetachedReceiver, filter)
-
-
-    }
-
     override fun onResume() {
         super.onResume()
         startUsbConnection()
@@ -81,6 +105,7 @@ class MainActivity : Activity(){
 
     override fun onDestroy() {
         super.onDestroy()
+        DS4Manager.cancelDiscovery()
         unregisterReceiver(usbDetachedReceiver)
         stopUsbConnection()
     }
@@ -143,39 +168,37 @@ class MainActivity : Activity(){
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        val commands =  carController.handleAnalogEvent(event)
+//        Log.d("MOTION EVENT","Generic Motion event: $event")
+        val commands = carController.handleAnalogEvent(event)
         commands.forEach {
+//            Log.d("WRITING COMMAND", "it")
             serialDevice?.write(it.toByteArray())
         }
 
         return true
     }
 
-    override fun onKeyDown(keyCode:Int, event: KeyEvent):Boolean {
-        var handled = false
-        if ((event.source and InputDevice.SOURCE_GAMEPAD) === InputDevice.SOURCE_GAMEPAD)
-        {
-            if (event.getRepeatCount() === 0)
-            {
-                when (keyCode) {
-                    else -> if (isFireKey(keyCode))
-                    {
-                        handled = true
-                        var command = "M2D1S200x"
-                        serialDevice?.write(command.toByteArray())
-//                        mDevice.writeUartData("M2D1S200x")
-
-                    }// Update the ship object to fire lasers
-                }// Handle gamepad and D-pad button presses to
-                // navigate the ship
-            }
-            if (handled)
-            {
-                return true
-            }
-        }
-        return super.onKeyDown(keyCode, event)
-    }
+//    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+//        var handled = false
+//        if ((event.source and InputDevice.SOURCE_GAMEPAD) === InputDevice.SOURCE_GAMEPAD) {
+//            if (event.getRepeatCount() === 0) {
+//                when (keyCode) {
+//                    else -> if (isFireKey(keyCode)) {
+//                        handled = true
+//                        var command = "M2D1S200x"
+//                        serialDevice?.write(command.toByteArray())
+////                        mDevice.writeUartData("M2D1S200x")
+//
+//                    }// Update the ship object to fire lasers
+//                }// Handle gamepad and D-pad button presses to
+//                // navigate the ship
+//            }
+//            if (handled) {
+//                return true
+//            }
+//        }
+//        return super.onKeyDown(keyCode, event)
+//    }
 
 
     private fun isFireKey(keyCode: Int): Boolean {
@@ -193,9 +216,6 @@ class MainActivity : Activity(){
 
     }
 }
-
-
-
 
 
 /**
